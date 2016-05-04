@@ -6,7 +6,7 @@ GatewayScript for sending IBM API Connect response to Loggly.
 
 */
 
-var logglyCustomerToken = 'eb4f3569-2c82-4f60-bb35-2e89fa2305ea';
+var logglyCustomerToken = 'your Loggly customer token';
 
 var urlopen = require('urlopen');
 var responseObject = {};
