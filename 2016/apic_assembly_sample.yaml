@@ -1,0 +1,19 @@
+  assembly:
+    execute:
+      - gatewayscript:
+          title: logglyLogRequest
+          source: "/*\r\nJo Torsmyr\r\nhttps://github.com/tverilytt/IBMAPIConnect\r\n\r\nGatewayScript for sending IBM API Connect requests to Loggly.\r\n\r\n*/\r\n\r\nvar logglyCustomerToken = 'your Loggly customer token';\r\n\r\nvar urlopen = require ('urlopen');\r\nvar request = apim.getvariable('request');\r\n\r\nvar payload;\r\n\r\nsession.INPUT.readAsBuffer(function(error, buffer) {\r\n  if (error) payload = '';\r\n  else \r\n    if (buffer.length > 0) payload = buffer.toString();\r\n    else payload = '';\r\n\r\n  var logData = JSON.stringify(request) + payload;\r\n  sendLogData(logData);\r\n});\r\n\r\nfunction sendLogData(data) {\r\n  var options = {\r\n    target : 'http://logs-01.loggly.com/inputs/' + logglyCustomerToken + '/tag/https',\r\n    method : 'POST',\r\n    contentType : 'application/json',\r\n    data : data\r\n  };\r\n\r\n  urlopen.open(options, function(error, response) {\r\n    if (error) throw error;\r\n  });\r\n}"
+      - gatewayscript:
+          title: passthruProxy
+          source: "/*\r\nJo Torsmyr\r\nhttps://github.com/tverilytt/IBMAPIConnect\r\n\r\nGatewayScript for general purpose proxy passthrough.\r\n\r\n*/\r\n\r\nvar url = require('url');\r\nvar request = apim.getvariable('request');\r\nvar search = url.parse(request.uri).search || '';\r\n\r\nvar headers = request.headers;\r\n\r\nvar host = headers['x-jo2-host'] || 'sljo2.mybluemix.net';\r\nvar port = headers['x-jo2-port'] || 443;\r\n\r\n//var hosturl = 'https://sljo2.mybluemix.net';\r\nvar hosturl = 'https://' + host + ':' + port;\r\n\r\nvar targetURL = hosturl + request.path + search;\r\n\r\n/* // Bundle request properties into URI, only for debugging...\r\nvar requestdata = '';\r\nfor (var key in request)\r\n    if (request.hasOwnProperty(key))\r\n       requestdata += key + ':' + request[key];\r\nrequest.targetURL = targetURL + encodeURIComponent(requestdata);\r\n*/\r\n\r\napim.setvariable('targetURL', targetURL);\r\n"
+      - invoke:
+          title: invoke
+          timeout: 60
+          verb: GET
+          cache-response: protocol
+          cache-ttl: 900
+          target-url: $(targetURL)
+      - gatewayscript:
+          title: logglyLogResponse
+          source: "/*\nJo Torsmyr\nhttps://github.com/tverilytt/IBMAPIConnect\n\nGatewayScript for sending IBM API Connect response to Loggly.\n\n*/\n\nvar logglyCustomerToken = ''your Loggly customer token';\n\nvar urlopen = require('urlopen');\nvar responseObject = {};\nresponseObject.statusCode = apim.getvariable('message.status.code');\nresponseObject.statusReason = apim.getvariable('message.status.reason');\nresponseObject.headers = apim.getvariable('message.headers');\nresponseObject.body = apim.getvariable('message.body');\n\nvar payload;\n\napim.readInputAsBuffer(function (error, buffer) {\n  if (error) payload = JSON.stringify(error);\n  else\n  \tif (buffer.length > 0) payload = buffer.toString();\n    else payload = '';\n\n  responseObject.payload = payload;\n  var logData = JSON.stringify(responseObject);\n  sendLogData(logData);\n});\n\n\nfunction sendLogData(data) {\n  var options = {\n    target : 'http://logs-01.loggly.com/inputs/' + logglyCustomerToken + '/tag/https',\n    method : 'POST',\n    contentType : 'application/json',\n    data : data\n  };\n\n  urlopen.open(options, function(error, response) {\n    if (error) throw error;\n  });\n}\n"
+    catch: []
