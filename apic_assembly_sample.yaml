@@ -1,0 +1,83 @@
+  assembly:
+    execute:
+      - gatewayscript:
+          title: logglyLogRequest
+          version: 1.0.0
+          source: "/*\nJo Torsmyr\nhttps://github.com/tverilytt/IBMAPIConnect\n\nGatewayScript for sending IBM API Connect requests to Loggly.\n\n*/\n\nfunction myfunc() { return 'joglobal'};\napim.setvariable('myctx.myfunc', myfunc.toString());\n\nvar logglyCustomerToken = 'your Loggly customer token';\n\nvar headers = apim.getvariable('message.headers');\nheaders['accept-language'] = '*';\napim.setvariable('message.headers', headers);\n//apim.setvariable('message.headers.accept-language', '');\n\nvar urlopen = require('urlopen');\nvar request = apim.getvariable('request');\nvar message = apim.getvariable('message');\nvar payload;\n\nvar keys = [];\nkeys.push('dummy');\nvar myself = apim;\nvar key;\nfor (key in myself) {\n//  if (myself.hasOwnProperty(key)) {\n     keys.push(key);\n//  }\n}\nfor (key in myself.util) {\n//  if (myself.hasOwnProperty(key)) {\n     keys.push(key);\n//  }\n}\nvar service = apim.getvariable('service') || 'empty service';\n\nsession.INPUT.readAsBuffer(function(error, buffer) {\n  if (error) payload = '';\n  else {\n    if (buffer.length > 0) payload = buffer.toString();\n    else payload = '';\n  }\n\n//  var rh = '<<' + apim.getvariable('request.headers.content-type') + '>>';\n//  rh += '<<' + apim.getvariable('request').headers['content-type'] + '>>';\n    \n  payload = payload || 'empty payload';\n  var logData = JSON.stringify({\n    type : 'request',\n    service : service,\n    apimkeys : keys,\n    request : request,\n    message : message,\n    payload : payload,\n    myfunc : myfunc.toString() || 'empty func'\n  });\n  sendLogData(logData);\n});\n\nfunction sendLogData(data) {\n  var options = {\n    target : 'http://logs-01.loggly.com/inputs/' + logglyCustomerToken + '/tag/https',\n    method : 'POST',\n    contentType : 'application/json',\n    data : data\n  };\n\n  urlopen.open(options, function(error, response) {\n    if (error) throw error;\n  });\n}\n"
+      - gatewayscript:
+          title: passthruProxy
+          source: "/*\r\nJo Torsmyr\r\nhttps://github.com/tverilytt/IBMAPIConnect\r\n\r\nGatewayScript for general purpose proxy passthrough.\r\n\r\n*/\r\n\r\n\r\nvar url = require('url');\r\nvar request = apim.getvariable('request');\r\nvar search = url.parse(request.uri).search || '';\r\n\r\nvar headers = request.headers;\r\n\r\nvar host = headers['x-jo2-host'] || 'sljo2.mybluemix.net';\r\nvar port = headers['x-jo2-port'] || 443;\r\n\r\n//var hosturl = 'https://sljo2.mybluemix.net';\r\nvar hosturl = 'https://' + host + ':' + port;\r\n\r\nvar targetURL = hosturl + request.path + search;\r\n\r\n/* // Bundle request properties into URI, only for debugging...\r\nvar requestdata = '';\r\nfor (var key in request)\r\n    if (request.hasOwnProperty(key))\r\n       requestdata += key + ':' + request[key];\r\nrequest.targetURL = targetURL + encodeURIComponent(requestdata);\r\n*/\r\n\r\napim.setvariable('targetURL', targetURL);\r\n"
+      - proxy:
+          title: proxy
+          timeout: 60
+          verb: keep
+          cache-response: no-cache
+          cache-ttl: 900
+          version: 1.0.0
+          target-url: $(targetURL)
+          description: Loopback backend
+      - gatewayscript:
+          title: logglyLogResponse
+          version: 1.0.0
+          source: |
+            /*
+            Jo Torsmyr
+            https://github.com/tverilytt/IBMAPIConnect
+
+            GatewayScript for sending IBM API Connect response to Loggly.
+
+            Assumption:
+            variable output contains payload.
+
+            */
+
+            var myfuncvar = apim.getvariable('myctx.myfunc');
+            var myfunc = Function(apim.getvariable('myctx.myfunc'));
+
+            var myval = myfunc() || 'Eval: ' + eval(apim.getvariable('myctx.myfunc')) || 'myfunc empty';
+
+            var logglyCustomerToken = 'your Loggly customer token';
+
+            var urlopen = require('urlopen');
+
+            var headers = apim.getvariable('message.headers');
+            headers['transfer-encoding'] = 'chunked';
+            //apim.setvariable('message.headers.transfer-encoding', 'chunked1');
+            headers['connection'] = 'keep-alive';
+            //apim.setvariable('message.headers.connection', 'keep-alive');
+            apim.setvariable('message.headers', headers);
+
+            var message = apim.getvariable('message') || '';
+
+            var responseObject = {};
+            responseObject.statusCode = apim.getvariable('message.status.code');
+            responseObject.statusReason = apim.getvariable('message.status.reason');
+            responseObject.headers = apim.getvariable('message.headers');
+            responseObject.body = apim.getvariable('message.body');
+
+            session.output.write(responseObject.body);
+            apim.output('application/json');
+
+            var logData = JSON.stringify({
+              myglobal : myval,
+              myfuncvar : myfuncvar || 'empty ctx.myfunc',
+              type : 'response',
+              response : responseObject,
+              message : message
+            });
+            sendLogData(logData);
+
+            function sendLogData(data) {
+              var options = {
+                target : 'http://logs-01.loggly.com/inputs/' + logglyCustomerToken + '/tag/https',
+                method : 'POST',
+                contentType : 'application/json',
+                data : data
+              };
+
+              urlopen.open(options, function(error, response) {
+                if (error) throw error;
+              });
+            }
+    catch:
+      - default: []
